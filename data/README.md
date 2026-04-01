@@ -13,8 +13,11 @@
 
 ## Result files
 
-### Intersection of ERV-W associated LTRs with retrotector predictions
-- `hg38_rmsk_TEtranscripts_ERVW_LTRs_intersect_retrotector.bed`
+### Intersection of ERVs to their associated LTRs with retrotector predictions
+1. `hg38_rmsk_TEtranscripts_ERVW_LTRs_intersect_retrotector.bed`: Output of bedtools intersect when you intersect all ERV-W associated LTRs to retrotector annotation (`-wo`).
+2. `hg38_rmsk_TEtranscripts_ERVW_LTR17_intersect_retrotector_predictions.bed`: Extracted only LTR17 from the previous point (1), and kept only the coordinates of *unique* predictions. Exact command on header.
+3. `hg38_rmsk_TEtranscripts_ERVH_LTR7_intersect_retrotector.bed`: Output of bedtools intersect when you intersect all ERV-H associated LTR7 (A, B, C, Y) to retrotector annotation (`-wo`).
+4. `hg38_rmsk_TEtranscripts_ERVH_LTR7_intersect_retrotector_predictions.bed`: Kept from the previous point (3) only the coordinates of *unique* predictions.
 
 ### ERV differential expression analysis
 - `ERV_DEA.xlsx` : Differential expression analysis of ERV retrotector predictions. Results tables from DESeq2.
