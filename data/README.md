@@ -18,6 +18,7 @@
 
 ### ERV differential expression analysis
 - `ERV_DEA.xlsx` : Differential expression analysis of ERV retrotector predictions. Results tables from DESeq2.
+- `data/2_ERV_DEA.Rdata`: R data resulting of `2_ERV_DEA.Rmd`. The rest were too heavy to upload to github.
 
 ### Gene differential expression analysis and GSEA
 - `genes_DEA.xlsx`: Gene differential expression analysis results from DESeq2
@@ -34,4 +35,6 @@ Gene effect (log2FC) as a function of distance to an LTR17
 
 #### Missing from github because they are too large:
 - `hg38_rmsk_TEtranscripts.bed` : Repeatmasker annotation bed file (complete), curated by TEtranscripts' authors.
-- `data/4_gene_DEA.Rdata`: R data resulting of `4_gene_DEA.Rmd`. The rest were too heavy to upload to github.
+- `data/4_gene_DEA.Rdata`: Too heavy to upload to github.
+- `data/5_snRNAseq_iNGN.Rdata`: Too heavy to upload to github.
+- `data/3_TE_DEA.Rdata`: Too heavy to upload to github.
