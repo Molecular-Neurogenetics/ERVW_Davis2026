@@ -1,0 +1,139 @@
+---
+title: "Single nuclei RNAseq results from day 32 iNGN sample"
+output:
+  html_document:
+    df_print: paged
+---
+
+This is a check up of the cell type composition of our iNGN cultures at day 32.
+
+### Load libraries and data
+```{r}
+library(Seurat)
+library(ggplot2)
+library(tidyverse)
+library(data.table)
+
+sample.data <- Read10X(data.dir = "~/inbox/MN11_HERVW/MN11_iNGN_Rep1_10x_32dpi_E015/outs/filtered_feature_bc_matrix/")
+sample <- CreateSeuratObject(counts = sample.data, project = "iNGN", min.cells = 3, min.features = 500)
+sample[["percent.mt"]] <- PercentageFeatureSet(sample, pattern = "^MT-")
+```
+
+### Quality control metrics and filtering
+```{r}
+# Before
+VlnPlot(sample, c("nFeature_RNA", "percent.mt", "nCount_RNA"))
+
+max_genes <- mean(sample$nFeature_RNA) + 2*(sd(sample$nFeature_RNA)) 
+min_genes <- mean(sample$nFeature_RNA) - (sd(sample$nFeature_RNA))
+min_genes <- ifelse(min_genes < 0, 0, min_genes)
+
+sample_postqc <- subset(sample, subset = nFeature_RNA > min_genes & nFeature_RNA < max_genes)
+# After filtering
+VlnPlot(sample_postqc, c("nFeature_RNA", "percent.mt", "nCount_RNA"))
+```
+
+### Normalization, scaling, PCA and UMAP
+```{r}
+DefaultAssay(sample_postqc) <- "RNA"  
+sample_postqc <- NormalizeData(sample_postqc, assay = "RNA", margin = 2) 
+sample_postqc <- FindVariableFeatures(sample_postqc, selection.method = "vst", nfeatures = 2000)
+all.genes <- rownames(sample_postqc)
+sample_postqc <- RenameCells(sample_postqc, sample_postqc$orig.ident)
+
+sample_postqc <- ScaleData(sample_postqc, features = all.genes)
+sample_postqc <- RunPCA(sample_postqc, features = VariableFeatures(object = sample_postqc))
+sample_postqc <- FindNeighbors(sample_postqc, dims = 1:10)
+sample_postqc <- FindClusters(sample_postqc, resolution = 0.1)
+sample_postqc <- RunUMAP(sample_postqc, dims = 1:10)
+
+DimPlot(sample_postqc) & theme_bw()
+```
+
+### How many cells are NeuN+?
+```{r}
+FetchData(sample_postqc, c("RBFOX3", "umap_1", "umap_2")) %>% 
+  arrange(RBFOX3) %>% 
+  ggplot(aes(x=umap_1, y=umap_2, color=RBFOX3)) + geom_point(size=0.3) + theme_bw() +
+  scale_color_gradient(low="lightgrey", high="red")
+```
+
+Interesting, does this relate to the number of genes detected? (did we set the original threshold too low?)
+```{r}
+FeaturePlot(sample_postqc, "nFeature_RNA") & theme_bw()
+```
+
+Seems like it, but let's see if we can find any genes marking this cells
+```{r}
+gene_dea <- FindAllMarkers(sample_postqc)
+# Protein coding
+protein_coding_genes <- fread("/Volumes/MyPassport/annotations/human/gencode/v38/gencode.v38.annotation_protein_coding_genes.bed", skip=1)
+
+gene_dea_top10 <- gene_dea %>% 
+  filter(avg_log2FC > 1 & pct.1 > 0.2 & gene %in% protein_coding_genes$V4) %>% 
+  group_by(cluster) %>% 
+  arrange(avg_log2FC, -p_val_adj) %>% 
+  top_n(10, avg_log2FC) %>% 
+  arrange(cluster)
+  
+DotPlot(sample_postqc, unique(gene_dea_top10$gene)) + coord_flip()
+```
+
+Ok, seems like all markers of this cluster are also expressed in the rest of the clusters (to a lower intensity), and are expressed in a lower fraction of the cells (as a percentage of the cluster). *This looks like fragmented cells, I'll exclude them.*
+
+## New QC - minimum of 1000 genes detected
+
+```{r}
+sample <- CreateSeuratObject(counts = sample.data, project = "iNGN", min.cells = 3, min.features = 1000)
+sample[["percent.mt"]] <- PercentageFeatureSet(sample, pattern = "^MT-")
+# Before the std dev filtering
+VlnPlot(sample, c("nFeature_RNA", "percent.mt", "nCount_RNA"))
+
+max_genes <- mean(sample$nFeature_RNA) + 2*(sd(sample$nFeature_RNA)) 
+min_genes <- mean(sample$nFeature_RNA) - (sd(sample$nFeature_RNA))
+min_genes <- ifelse(min_genes < 0, 0, min_genes)
+
+sample_postqc <- subset(sample, subset = nFeature_RNA > min_genes & nFeature_RNA < max_genes)
+# After filtering
+VlnPlot(sample_postqc, c("nFeature_RNA", "percent.mt", "nCount_RNA"))
+sample_postqc
+```
+
+### Normalize, scale, PCA and UMAP
+
+```{r}
+DefaultAssay(sample_postqc) <- "RNA"  
+sample_postqc <- NormalizeData(sample_postqc, assay = "RNA", margin = 2) 
+sample_postqc <- FindVariableFeatures(sample_postqc, selection.method = "vst", nfeatures = 2000)
+all.genes <- rownames(sample_postqc)
+sample_postqc <- RenameCells(sample_postqc, sample_postqc$orig.ident)
+
+sample_postqc <- ScaleData(sample_postqc, features = all.genes)
+sample_postqc <- RunPCA(sample_postqc, features = VariableFeatures(object = sample_postqc))
+sample_postqc <- FindNeighbors(sample_postqc, dims = 1:10)
+sample_postqc <- FindClusters(sample_postqc, resolution = 0.1)
+sample_postqc <- RunUMAP(sample_postqc, dims = 1:10)
+DimPlot(sample_postqc) & theme_bw()
+```
+
+### How many cells are NeuN+?
+```{r}
+FetchData(sample_postqc, c("RBFOX3", "umap_1", "umap_2")) %>% 
+  arrange(RBFOX3) %>% 
+  ggplot(aes(x=umap_1, y=umap_2, color=RBFOX3)) + geom_point(size=0.3) + theme_bw() +
+  scale_color_gradient(low="lightgrey", high="red")
+```
+
+### What type of neurons?
+```{r}
+gene_dea <- FindAllMarkers(sample_postqc)
+gene_dea_top10 <- gene_dea %>% 
+  filter(avg_log2FC > 1 & pct.1 > 0.2 & gene %in% protein_coding_genes$V4) %>% 
+  group_by(cluster) %>% 
+  arrange(avg_log2FC, -p_val_adj) %>% 
+  top_n(10, avg_log2FC) %>% 
+  arrange(cluster)
+
+DotPlot(sample_postqc, unique(gene_dea_top10$gene)) + coord_flip()
+```
+
