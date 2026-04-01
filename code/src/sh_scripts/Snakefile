@@ -1,0 +1,291 @@
+# -*- coding: utf-8 -*-
+
+# lunarc configuration file
+import os
+
+WD =  "/path/in/cosmos/processed/MN11_HERVW/invitro/"
+configfile: "/path/in/cosmos/processed/MN11_HERVW/invitro/src/config_files/config.json"
+
+SAMPLES = config["samples"]
+SAMPLES_E013 = config["samples_e013"]
+geneGTF = "/path/in/cosmos/processed/raquelgg_fs3_jakobssonlab/annotations/hg38/gencode/v38/gencode.v38.annotation.gtf"
+exonGTF = "/path/in/cosmos/processed/raquelgg_fs3_jakobssonlab/annotations/hg38/gencode/v38/gencode.v38.basic.annotation.gtf"
+starIndex = "/path/in/cosmos/processed/raquelgg_fs5_jakobssonlab/indices/GRCh38.p13_gencode.v38_STAR"
+teGTF = "/path/in/cosmos/processed/raquelgg_fs3_jakobssonlab/annotations/hg38/rmsk/hg38_rmsk_TEtranscripts.gtf"
+
+# Run as:
+# snakemake -j 5 --cluster-config /path/in/cosmos/processed/MN11_HERVW/invitro/src/config_files/lunarc_config.json --cluster "sbatch -A {cluster.account} -p {cluster.partition} --tasks-per-node {cluster.tasks-per-node}  -t {cluster.time} -o {cluster.output} -e {cluster.error} -J {cluster.job-name} -N {cluster.nodes}" --latency-wait 60
+
+rule all:
+    input:
+       os.path.join(WD, "deeptools/LTR17_ERV_10kb/LTR17_zoomout_positive_sr.mtx"),
+       os.path.join(WD, "deeptools/LTR7_ERV_10kb/LTR7_zoomout_positive_sr.mtx")
+        
+
+rule uniquemapping:
+    input:
+        lambda wildcards: f"{config['samples'][wildcards.sample]}_R1_001.fastq.gz",
+        lambda wildcards: f"{config['samples'][wildcards.sample]}_R2_001.fastq.gz",
+        starIndex,
+        geneGTF
+    params:
+        prefix = os.path.join(WD, "map/unique/{sample}/{sample}_")
+    output:
+        os.path.join(WD, "map/unique/{sample}/{sample}_Aligned.sortedByCoord.out.bam")
+    shell:
+        """
+        module purge
+        ml GCC/10.2.0 STAR/2.7.8a
+
+        STAR --runThreadN 10 \
+        --readFilesCommand gunzip -c \
+        --outSAMattributes All \
+        --outSAMtype BAM SortedByCoordinate \
+        --genomeDir {input[2]} \
+        --sjdbGTFfile {input[3]} \
+        --outFileNamePrefix {params.prefix} \
+        --outFilterMultimapNmax 1 \
+        --outFilterMismatchNoverLmax 0.03  \
+        --readFilesIn  {input[0]} {input[1]}
+
+        module purge
+        """
+
+rule indexing:
+    input:
+        os.path.join(WD, "map/unique/{sample}/{sample}_Aligned.sortedByCoord.out.bam")
+    output:
+        os.path.join(WD, "map/unique/{sample}/{sample}_Aligned.sortedByCoord.out.bam.bai")
+    shell:
+        """
+        module purge
+        ml GCC/11.3.0 SAMtools/1.16.1
+        
+        samtools index -b {input}
+
+        module purge
+        """
+
+rule bigwig:
+    input:
+        os.path.join(WD, "map/unique/{sample}/{sample}_Aligned.sortedByCoord.out.bam"),
+        os.path.join(WD, "map/unique/{sample}/{sample}_Aligned.sortedByCoord.out.bam.bai")
+    output:
+        os.path.join(WD, "map/unique/{sample}/{sample}_Aligned.sortedByCoord.out.bw"),
+        os.path.join(WD, "map/unique/{sample}/{sample}_Aligned.sortedByCoord.forward.out.bw"),
+        os.path.join(WD, "map/unique/{sample}/{sample}_Aligned.sortedByCoord.reverse.out.bw")
+    shell:
+        """
+        module purge
+        ml GCC/10.2.0  OpenMPI/4.0.5 deepTools/2.5.4
+        bamCoverage --normalizeUsingRPKM -b {input[0]} -o {output[0]}
+
+        bamCoverage --normalizeUsingRPKM --filterRNAstrand forward -b {input[0]} -o {output[1]}
+        bamCoverage --normalizeUsingRPKM --filterRNAstrand reverse -b {input[0]} -o {output[2]}
+
+        module purge
+        """
+
+rule gene_quantification:
+    input:
+        annotation = geneGTF,
+        sample = os.path.join(WD, "map/unique/{sample}/{sample}_Aligned.sortedByCoord.out.bam")
+    output:
+        os.path.join(WD, "gene_counts/unique/{sample}_gene_count_matrix_2.csv")
+    shell:
+        """
+        module purge
+
+        module load subread/1.6.3-virt
+        subread-parse.sh featureCounts -p -F GTF -g gene_name -s 2 -a {input.annotation} -o {output} {input.sample}
+
+        module purge
+        """
+
+rule TE_quantification:
+    input:
+        TEgtf = teGTF, 
+        sample = os.path.join(WD, "map/unique/{sample}/{sample}_Aligned.sortedByCoord.out.bam")
+    output:
+        os.path.join(WD, "TEcounts/unique/{sample}_TE_count_matrix_2.csv")
+    shell:
+        """
+        module purge
+
+        module load subread/1.6.3-virt
+        subread-parse.sh featureCounts -p -s 2 -F GTF -g transcript_id -a {input.TEgtf} -o {output} {input.sample}
+
+        module purge
+        """
+
+# This is for the LTRs (not the proviruses)
+rule matrix_LTR17:
+    input:
+        forward = expand(os.path.join(WD, "map/unique/{sample}/{sample}_Aligned.sortedByCoord.forward.out.bw"), sample=SAMPLES_E013),
+        negative = expand(os.path.join(WD, "map/unique/{sample}/{sample}_Aligned.sortedByCoord.reverse.out.bw"), sample=SAMPLES_E013),
+        TEbed="hg38_rmsk_TEtranscripts_LTR17.bed"
+        #TEbed="hg38_rmsk_TEtranscripts_HERVW_LTRs.bed"
+        #TEbed="/path/in/cosmos/processed/raquelgg_fs3_jakobssonlab/annotations/hg38/rmsk/hg38_rmsk_TEtranscripts.bed"
+    output:
+        positive_sr = os.path.join(WD, "deeptools/LTR17/LTR17_positive_sr.mtx"),
+        negative_sr = os.path.join(WD, "deeptools/LTR17/LTR17_negative_sr.mtx")
+    shell:
+        """
+        negative_ltr17=regions_negative_ltr17.bed
+        positive_ltr17=regions_positive_ltr17.bed
+
+        grep LTR17 {input.TEbed} | awk '{{if($6 == "-" && ($3-$2) > 200){{print $0}}}}'> $negative_ltr17
+        grep LTR17 {input.TEbed} | awk '{{if($6 == "+" && ($3-$2) > 200){{print $0}}}}'> $positive_ltr17
+
+        ml GCC/11.3.0  OpenMPI/4.1.4 deepTools/3.5.2
+
+        computeMatrix scale-regions -R $positive_ltr17 -S {input.forward} {input.negative} -b 600 -a 600 --regionBodyLength 600 -o {output.positive_sr}
+        computeMatrix scale-regions -R $negative_ltr17 -S {input.negative} {input.forward} -b 600 -a 600 --regionBodyLength 600 -o {output.negative_sr}
+
+        module purge
+        """
+
+# This is for the LTRs (not the proviruses)
+rule matrix_LTR17_zoomout:
+    input:
+        forward = expand(os.path.join(WD, "map/unique/{sample}/{sample}_Aligned.sortedByCoord.forward.out.bw"), sample=SAMPLES_E013),
+        negative = expand(os.path.join(WD, "map/unique/{sample}/{sample}_Aligned.sortedByCoord.reverse.out.bw"), sample=SAMPLES_E013),
+        TEbed="hg38_rmsk_TEtranscripts_HERVW_LTRs.bed"
+        #TEbed="/path/in/cosmos/processed/raquelgg_fs3_jakobssonlab/annotations/hg38/rmsk/hg38_rmsk_TEtranscripts.bed"
+    output:
+        positive_sr = os.path.join(WD, "deeptools/LTR17_10kb/LTR17_zoomout_positive_sr.mtx"),
+        negative_sr = os.path.join(WD, "deeptools/LTR17_10kb/LTR17_zoomout_negative_sr.mtx")
+    shell:
+        """
+        negative_ltr17=regions_negative_ltr17.bed
+        positive_ltr17=regions_positive_ltr17.bed
+
+        grep LTR17 {input.TEbed} | awk '{{if($6 == "-" && ($3-$2) > 200){{print $0}}}}'> $negative_ltr17
+        grep LTR17 {input.TEbed} | awk '{{if($6 == "+" && ($3-$2) > 200){{print $0}}}}'> $positive_ltr17
+
+        ml GCC/11.3.0  OpenMPI/4.1.4 deepTools/3.5.2
+
+        computeMatrix scale-regions -R $positive_ltr17 -S {input.forward} {input.negative} -b 10000 -a 10000 --regionBodyLength 600 -o {output.positive_sr}
+        computeMatrix scale-regions -R $negative_ltr17 -S {input.negative} {input.forward} -b 10000 -a 10000 --regionBodyLength 600 -o {output.negative_sr}
+
+        module purge
+        """
+
+# This is for the LTRs (not the proviruses)
+rule matrix_LTR7:
+    input:
+        forward = expand(os.path.join(WD, "map/unique/{sample}/{sample}_Aligned.sortedByCoord.forward.out.bw"), sample=SAMPLES_E013),
+        negative = expand(os.path.join(WD, "map/unique/{sample}/{sample}_Aligned.sortedByCoord.reverse.out.bw"), sample=SAMPLES_E013),
+        TEbed="hg38_rmsk_TEtranscripts_LTR7.bed"
+    output:
+        positive_sr = os.path.join(WD, "deeptools/LTR7/LTR7_positive_sr.mtx"),
+        negative_sr = os.path.join(WD, "deeptools/LTR7/LTR7_negative_sr.mtx")
+    shell:
+        """
+        negative_ltr7=regions_negative_ltr7.bed
+        positive_ltr7=regions_positive_ltr7.bed
+
+        grep LTR7 {input.TEbed} | awk '{{if($6 == "-" && ($3-$2) > 200){{print $0}}}}'> $negative_ltr7
+        grep LTR7 {input.TEbed} | awk '{{if($6 == "+" && ($3-$2) > 200){{print $0}}}}'> $positive_ltr7
+
+        ml GCC/11.3.0  OpenMPI/4.1.4 deepTools/3.5.2
+
+        computeMatrix scale-regions -R $positive_ltr7 -S {input.forward} {input.negative} -b 600 -a 600 --regionBodyLength 600 -o {output.positive_sr}
+        computeMatrix scale-regions -R $negative_ltr7 -S {input.negative} {input.forward} -b 600 -a 600 --regionBodyLength 600 -o {output.negative_sr}
+
+        module purge
+        """
+
+# This is for the LTRs (not the proviruses)
+rule matrix_LTR7_zoomout:
+    input:
+        forward = expand(os.path.join(WD, "map/unique/{sample}/{sample}_Aligned.sortedByCoord.forward.out.bw"), sample=SAMPLES_E013),
+        negative = expand(os.path.join(WD, "map/unique/{sample}/{sample}_Aligned.sortedByCoord.reverse.out.bw"), sample=SAMPLES_E013),
+        TEbed="hg38_rmsk_TEtranscripts_LTR7.bed"
+    output:
+        positive_sr = os.path.join(WD, "deeptools/LTR7_10kb/LTR7_zoomout_positive_sr.mtx"),
+        negative_sr = os.path.join(WD, "deeptools/LTR7_10kb/LTR7_zoomout_negative_sr.mtx")
+    shell:
+        """
+        negative_ltr7=regions_negative_ltr7.bed
+        positive_ltr7=regions_positive_ltr7.bed
+
+        grep LTR7 {input.TEbed} | awk '{{if($6 == "-" && ($3-$2) > 200){{print $0}}}}'> $negative_ltr7
+        grep LTR7 {input.TEbed} | awk '{{if($6 == "+" && ($3-$2) > 200){{print $0}}}}'> $positive_ltr7
+
+        ml GCC/11.3.0  OpenMPI/4.1.4 deepTools/3.5.2
+
+        computeMatrix scale-regions -R $positive_ltr7 -S {input.forward} {input.negative} -b 10000 -a 10000 --regionBodyLength 600 -o {output.positive_sr}
+        computeMatrix scale-regions -R $negative_ltr7 -S {input.negative} {input.forward} -b 10000 -a 10000 --regionBodyLength 600 -o {output.negative_sr}
+
+        module purge
+        """
+
+rule FL_HERV_quantification:
+    input:
+        HERV = "/path/in/cosmos/processed/raquelgg_fs3_jakobssonlab/annotations/hg38/rmsk/hg38_HERVs_prediction_MN11.gtf",
+        sample=os.path.join(WD, "map/unique/{sample}/{sample}_Aligned.sortedByCoord.out.bam")
+    output:
+        csv = os.path.join(WD, "TEcounts/unique/{sample}_FL_HERV_count_matrix_2.csv")
+    shell:
+        """
+        module purge
+
+        module load subread/1.6.3-virt
+        subread-parse.sh featureCounts -p -s 2 -F GTF -g transcript_id -a {input.HERV} -o {output.csv} {input.sample}
+
+        module purge
+        """
+
+# This is for the provirus itself (not the LTR only)
+rule matrix_LTR7_ERV_zoomout:
+    input:
+        forward = expand(os.path.join(WD, "map/unique/{sample}/{sample}_Aligned.sortedByCoord.forward.out.bw"), sample=SAMPLES_E013),
+        negative = expand(os.path.join(WD, "map/unique/{sample}/{sample}_Aligned.sortedByCoord.reverse.out.bw"), sample=SAMPLES_E013),
+        TEbed="hg38_rmsk_TEtranscripts_ERVH_LTR7_intersect_retrotector_predictions.bed" # at ./data
+    output:
+        positive_sr = os.path.join(WD, "deeptools/LTR7_ERV_10kb/LTR7_zoomout_positive_sr.mtx"),
+        negative_sr = os.path.join(WD, "deeptools/LTR7_ERV_10kb/LTR7_zoomout_negative_sr.mtx")
+    shell:
+        """
+        negative_ltr7=regions_negative_ltr7.bed
+        positive_ltr7=regions_positive_ltr7.bed
+
+        tail -n +2 {input.TEbed} | awk '{{if($6 == "-"){{print $0}}}}'> $negative_ltr7
+        tail -n +2 {input.TEbed} | awk '{{if($6 == "+"){{print $0}}}}'> $positive_ltr7
+
+        ml GCC/11.3.0  OpenMPI/4.1.4 deepTools/3.5.2
+
+        computeMatrix scale-regions -R $positive_ltr7 -S {input.forward} {input.negative} -b 10000 -a 10000 --regionBodyLength 10000 -o {output.positive_sr}
+        computeMatrix scale-regions -R $negative_ltr7 -S {input.negative} {input.forward} -b 10000 -a 10000 --regionBodyLength 10000 -o {output.negative_sr}
+
+        module purge
+        """
+
+# This is for the provirus itself (not the LTR only)
+rule matrix_LTR17_ERV_zoomout:
+    input:
+        forward = expand(os.path.join(WD, "map/unique/{sample}/{sample}_Aligned.sortedByCoord.forward.out.bw"), sample=SAMPLES_E013),
+        negative = expand(os.path.join(WD, "map/unique/{sample}/{sample}_Aligned.sortedByCoord.reverse.out.bw"), sample=SAMPLES_E013),
+        TEbed="hg38_rmsk_TEtranscripts_ERVW_LTR17_intersect_retrotector_predictions.bed" # at ./data
+    output:
+        positive_sr = os.path.join(WD, "deeptools/LTR17_ERV_10kb/LTR17_zoomout_positive_sr.mtx"),
+        negative_sr = os.path.join(WD, "deeptools/LTR17_ERV_10kb/LTR17_zoomout_negative_sr.mtx")
+    shell:
+        """
+        negative_ltr17=regions_negative_ltr17_ervs.bed
+        positive_ltr17=regions_positive_ltr17_ervs.bed
+
+        tail -n +2 {input.TEbed} | awk '{{if($6 == "-"){{print $0}}}}'> $negative_ltr17
+        tail -n +2 {input.TEbed} | awk '{{if($6 == "+"){{print $0}}}}'> $positive_ltr17
+
+        ml GCC/11.3.0  OpenMPI/4.1.4 deepTools/3.5.2
+
+        computeMatrix scale-regions -R $positive_ltr17 -S {input.forward} {input.negative} -b 10000 -a 10000 --regionBodyLength 10000 -o {output.positive_sr}
+        computeMatrix scale-regions -R $negative_ltr17 -S {input.negative} {input.forward} -b 10000 -a 10000 --regionBodyLength 10000 -o {output.negative_sr}
+
+        module purge
+        """
+
+
+
