@@ -1,0 +1,153 @@
+---
+title: "ERV-W family overview"
+output:
+  html_document:
+    df_print: paged
+---
+
+I want to know what the composition of LTRs associated to ERV-W looks like in repeatmasker. What is the most common ERV-W LTR subfamily? 
+
+I've considered ERV-W LTRs as reported by [Kojima, 2018](https://doi.org/10.1186/s13100-017-0107-y):
+
+* LTR17
+* LTR12
+* LTR12B
+* LTR12C
+* LTR12D
+* LTR12E
+* LTR12F
+* LTR30
+* LTR35
+* LTR35B
+* MER41A
+* MER41B
+* MER41D
+* MER41E
+* MER41F
+* MER41G
+
+```{r setup, include=FALSE}
+    knitr::opts_knit$set(root.dir = normalizePath("/Volumes/MyPassport/MN11_HERVW/invitro/")) 
+```
+
+```{r}
+library(data.table)
+library(tidyverse)
+library(ggplot2)
+library(ggpubr)
+
+rmsk <- fread("./data/hg38_rmsk_TEtranscripts.bed", data.table = F)
+colnames(rmsk) <- c("chr", "start", "end", "TE_id", "dot", "strand", "TE_info")
+
+# To reduce the size...
+rmsk <- rmsk %>% 
+  filter(grepl("LTR", TE_info)) %>% 
+  filter(grepl("ERV1", TE_info))
+
+# From Kojima, 2018 PMID: 29308093
+ervw_ltrs <- c("LTR17_dup",
+                "LTR12_dup", 
+                "LTR12B_dup", 
+                "LTR12C_dup", 
+                "LTR12D_dup", 
+                "LTR12E_dup", 
+                "LTR12F_dup",
+                "LTR30_dup",
+                "LTR35_dup", 
+                "LTR35B_dup",
+                "MER41A_dup", 
+                "MER41B_dup", 
+                "MER41D_dup", 
+                "MER41E_dup", 
+                "MER41F_dup", 
+                "MER41G_dup")
+
+ervw_ltrs_rmsk <- rmsk %>% 
+  filter(grepl(paste(ervw_ltrs, collapse = "|"), TE_id))
+
+ervw_ltrs_rmsk_summary <- ervw_ltrs_rmsk %>% 
+  group_by(TE_info) %>% 
+  summarise(count = n()) %>% 
+  mutate(TE_info = fct_reorder(str_remove(pattern = ",ERV1,LTR", TE_info), desc(count)))
+
+ervw_ltrs_rmsk_summary %>%
+  ggplot(aes(x=TE_info, y=count)) + geom_bar(stat="identity") + 
+  geom_text(aes(label=count), vjust=0) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + labs(x="", y="Count") + 
+  ggtitle("ERV-W associated LTRs", subtitle = " ")
+
+# write.table(ervw_ltrs_rmsk, "./data/hg38_rmsk_TEtranscripts_ERVW_LTRs.bed", sep = "\t", quote = F, col.names = F, row.names = F)
+
+ervw_ltrs_rmsk %>% 
+  filter(grepl("LTR17", TE_id))
+```
+
+## How many are likely to be part of a provirus? 
+
+In order to answer this question we intersected these LTRs to retrotector predictions (hg38) as:
+
+`bedtools intersect -a ./data/hg38_rmsk_TEtranscripts_ERVW_LTRs.bed -b ./data/hg38_ERVs_prediction.bed -wo -f 0.5 > ./data/hg38_rmsk_TEtranscripts_ERVW_LTRs_intersect_retrotector.bed`
+
+Namely, an LTR would be considered as part of a provirus if it overlaps >=50% of it's sequence with a prediction. 
+
+```{r}
+rmsk_ERVW_LTRs_intersect_retrotector <- fread("./data/hg38_rmsk_TEtranscripts_ERVW_LTRs_intersect_retrotector.bed", data.table = F, skip = 1)
+colnames(rmsk_ERVW_LTRs_intersect_retrotector) <- c("chr", "start", "end", "TE_id", "dot", "strand", "TE_info",
+                                                    "chr_ERV", "start_ERV", "end_ERV", "dot2", "strand_ERV", 
+                                                    "dot3", "TE_id_ERV", "overlap")
+
+# Length of the LTR
+rmsk_ERVW_LTRs_intersect_retrotector$length_a <- rmsk_ERVW_LTRs_intersect_retrotector$end - rmsk_ERVW_LTRs_intersect_retrotector$start
+
+# Percentage of LTR sequence overlapping
+rmsk_ERVW_LTRs_intersect_retrotector$overlap_perc <- rmsk_ERVW_LTRs_intersect_retrotector$overlap / rmsk_ERVW_LTRs_intersect_retrotector$length_a
+
+# Is it 100%?
+rmsk_ERVW_LTRs_intersect_retrotector$overlap_fct <- ifelse(rmsk_ERVW_LTRs_intersect_retrotector$overlap_perc == 1, "100%", ">50%")
+
+# How many overlap in the subfamily (total)? We need this to order the plot by descending order
+totals <- rmsk_ERVW_LTRs_intersect_retrotector %>% 
+  count(TE_info, name = "total")
+
+# How many overlap >50% and how many 100%?
+rmsk_ERVW_LTRs_intersect_retrotector_count <- rmsk_ERVW_LTRs_intersect_retrotector %>% 
+  count(TE_info, overlap_fct, name = "count") %>% 
+  left_join(totals, by = "TE_info") %>% 
+  mutate(TE_info = fct_reorder(str_remove(TE_info, ",ERV1,LTR"), total, .desc = TRUE))
+
+ggplot(rmsk_ERVW_LTRs_intersect_retrotector_count, aes(x = TE_info, y = count, fill = overlap_fct)) +
+  geom_bar(stat = "identity") + 
+  geom_text(
+  aes(label = count),
+  position = position_stack(vjust = 0.5)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + labs(x="", y="Count") + 
+  ggtitle("ERV-W associated LTRs", subtitle = "Intersecting with a retrotector prediction")
+
+# Keeping order from most frequent to least
+te_order <- levels(rmsk_ERVW_LTRs_intersect_retrotector_count$TE_info)
+
+# Add a label with the percentage based on the entire subfamily (from ervw_ltrs_rmsk_summary).
+# In other words, what percentage of the LTR subfamily overlaps a provirus >50%, and what percentage of the LTR subfamily overlaps a provirus 100%?
+rmsk_ERVW_LTRs_intersect_retrotector %>% 
+  count(TE_info, overlap_fct, name = "count_retrotector") %>% 
+  mutate(TE_info = str_remove(TE_info, ",ERV1,LTR"),
+         TE_info_fct = factor(TE_info, levels = te_order)) %>% 
+  left_join(ervw_ltrs_rmsk_summary, by = "TE_info") %>% 
+  mutate(ratio = count_retrotector / count) %>% 
+  mutate(overlap_fct = factor(overlap_fct, levels = c("100%", ">50%"))) %>% 
+  ggplot(aes(x = TE_info_fct, y = count_retrotector, fill = overlap_fct)) +
+  geom_bar(stat = "identity") + 
+  geom_text(aes(label = sprintf("%.1f%%", ratio * 100)),
+            position = position_stack(vjust = 0.5)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + labs(x="", y="Count") + 
+  ggtitle("ERV-W associated LTRs", subtitle = "Intersecting with a retrotector prediction")
+```
+
+
+
+
+
+

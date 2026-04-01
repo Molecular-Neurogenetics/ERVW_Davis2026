@@ -1,0 +1,107 @@
+---
+title: "Num of solo LTRs and proviruses among ERV-W and ERV-H"
+output:
+  html_document:
+    df_print: paged
+---
+
+We wanted to get an idea on how the composition of these families compare to each other. How many solo LTRs there are and how many are likely to be part of a provirus. 
+
+To annotate those that are likely to be part of a provirus, we have used retrotector predictions based on hg38 to intersect LTR17s (ERV-W) and LTR7s (ERV-H). 
+
+I've wrote the results of these two scripts `./code/src/sh_scripts/genic_intergenic_LTR17.sh` and `./code/src/sh_scripts/genic_intergenic_LTR7.sh` below, and into the data frames to visualize them.
+
+I've marked an LTR to be a *solo LTR* if it does *not* overlap *any* retrotector prediction (`bedtools intersect -v`).
+
+### LTR17 (`genic_intergenic_LTR17.sh` output):
+
+How many LTR17 (ERV-W LTR) there are?
+     *852*
+     
+How many solo LTRs does LTR17 (ERV-W LTR) has? (No intersect with any retrotector prediction)
+     *715*
+     
+How many solo LTR17s are genic?
+     *319*
+     
+What about intergenic?
+     *396*
+     
+How many ERV-W LTR17s are genic?
+      *58*
+      
+What about intergenic?
+      *79*
+
+### LTR7 (`genic_intergenic_LTR7.sh` output):
+
+How many LTR7 (ERV-H LTR) there are?
+    *1480*
+    
+How many solo LTRs does LTR7 (ERV-H LTR) has? (No intersect with any retrotector prediction)
+     *977*
+     
+How many solo LTR7s are genic?
+     *409*
+     
+What about intergenic?
+     *568*
+     
+How many ERV-W LTR7s are genic?
+     *224*
+     
+What about intergenic?
+     *280*
+     
+## Number of elements per family (solo vs provirus)
+
+```{r}
+library(ggplot2)
+library(tidyverse)
+
+ltr17_ltr7_output <- data.frame(subfam=c("LTR17", "LTR17", "LTR7", "LTR7"),
+           type=c("solo","provirus","solo","provirus"),
+           count=c(715,(852-715),977,(1480-977)))
+
+ltr17_ltr7_output %>% 
+  ggplot(aes(x=subfam, y=count, fill = type)) + geom_bar(stat="identity", position="fill") + 
+  theme_bw() + labs(x="", y="Frequency (%)") + ggtitle("Provirus vs solo LTRs")
+
+ltr17_ltr7_output %>% 
+  ggplot(aes(x=subfam, y=count, fill = type)) + 
+  geom_bar(stat="identity", position="dodge") + 
+  geom_text(aes(label=count), vjust=0) + 
+  theme_bw() + labs(x="", y="Frequency") + ggtitle("Provirus vs solo LTRs")
+# dev.off()
+```
+
+
+## Num of elements per family genic/intergenic (solo vs provirus)
+
+I've marked an LTR to be *intergenic* if it does *not* overlap *any* (gencode v38 basic) gene (`bedtools intersect -v`).
+
+```{r}
+ltr17_ltr7_genic_output <- data.frame(subfam=c("LTR17", "LTR17", "LTR17", "LTR17", "LTR7", "LTR7","LTR7","LTR7"),
+           type=c("solo", "solo", "provirus", "provirus", "solo", "solo", "provirus", "provirus"),
+           genic=c(T,F,T,F,T,F,T,F),
+           count=c(319,396,58,79, 409,568,224,280))
+
+ltr17_ltr7_genic_output %>% 
+  ggplot(aes(x=type, y=count, fill = genic)) + 
+  geom_bar(stat="identity", position="fill") + 
+  theme_bw() + labs(x="", y="Frequency (%)") + ggtitle("Provirus vs solo LTRs") + facet_wrap(.~subfam)
+
+ltr17_ltr7_genic_output %>% 
+  ggplot(aes(x=type, y=count, fill = genic)) + 
+  geom_bar(stat="identity", position="dodge") + 
+  geom_text(aes(label=count), vjust=0) + 
+  theme_bw() + labs(x="", y="Frequency") + ggtitle("Provirus vs solo LTRs") + facet_wrap(.~subfam)
+
+
+```
+
+
+
+
+
+
