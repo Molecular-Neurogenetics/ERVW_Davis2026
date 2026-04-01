@@ -49,7 +49,7 @@ getAverage <- function(dds) {
 }
 
 meanPlot_cus <- function(exp,test,c1 = "condition 1",c2 = "condition 2",p=.05,l=0,id=F, ttl="", 
-                         repel=TRUE, col1="tomato", col2="darkturquoise", col3="grey", highlights=NA){
+                         repel=TRUE, col1="darkturquoise", col2="grey", col3="tomato", highlights=NA){
   sign <- getSignName(x = test,p = p,l = l)
   u <- sign$up
   d <- sign$down
@@ -189,7 +189,7 @@ for(i in names(samplesheet_comparisons)){
   test <- paste("condition_", effect ,"_vs_Control", sep = "")
   print(c("Test: ", test))
 
-  te_dds_list[[i]] <- DESeqDataSetFromMatrix(te_counts[,samplesheet_comparisons[[i]]$sample], samplesheet_comparisons[[i]], design =  ~ condition)
+  te_dds_list[[i]] <- DESeqDataSetFromMatrix(te_counts[,samplesheet_comparisons[[i]]$sample], samplesheet_comparisons[[i]], design = ~ experiment+condition)
   te_dds_list[[i]]$condition <- relevel(te_dds_list[[i]]$condition, "Control")
   te_dds_list[[i]] <- DESeq(te_dds_list[[i]])
   te_res_list[[i]] <- lfcShrink(te_dds_list[[i]], test)
@@ -227,8 +227,8 @@ for(i in names(te_res_list)){
   up_sig_lab <- unique(tmp$data$Sig)[startsWith(unique(tmp$data$Sig), "Upregulated")]
   down_sig_lab <- unique(tmp$data$Sig)[startsWith(unique(tmp$data$Sig), "Downregulated")]
   
-  point_colours <- c("grey", "darkturquoise", "tomato")
-  point_sizes <- c(1,1,2)
+  point_colours <- c("grey", "tomato", "darkturquoise")
+  point_sizes <- c(1,2,1)
   
   title <- str_replace_all(i, pattern = "_", replacement = " ")
   
