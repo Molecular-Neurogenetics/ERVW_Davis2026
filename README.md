@@ -1,9 +1,9 @@
 *placeholder for DOI*
-# Title placeholder
+# Transcriptional activation of endogenous retroviruses destabilizes postsynaptic organization and function in human neurons
 
 This repository contains code, processed data, and environment files supporting the publication:
 
-*Title placeholder* (Davis et al., 2026).  
+*Transcriptional activation of endogenous retroviruses destabilizes postsynaptic organization and function in human neurons* (Davis et al., 2026).  
 
 The goal is to make analyses **transparent and reproducible**: each analysis step (preprocessing → processing) is organized by data type.
 
@@ -45,8 +45,8 @@ Unless otherwise specified in subfolders, **code and data** in this repository a
 
 If you use these data or code, please cite the article:
 
-**placeholder for title**  
-*placeholder for authors*
+**Transcriptional activation of endogenous retroviruses destabilizes postsynaptic organization and function in human neurons**  
+*Carrie Davis-Hansson, Raquel Garza, Claire Piochon, Jenny G. Johansson, Volker Busskamp, Johan Jakobsson & Emily M. Johansson*
 *placeholder for biorxiv link and biorxiv doi*
 
 This biorxiv version has been produced with release v1.0 *placeholder for zenodo DOI of this repo*
